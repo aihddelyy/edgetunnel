@@ -1,7 +1,7 @@
 ﻿const Version = '2026-08-11 14:45:22';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
-const Pages静态页面 = 'https://edt-pages.github.io';
+const Pages静态页面 = 'https://aihddelyy.github.io/EDT-Pages';
 ///////////////////////////////////////////////////////全局常量和工具函数///////////////////////////////////////////////
 const WS早期数据最大字节 = 8 * 1024, WS早期数据最大头长度 = Math.ceil(WS早期数据最大字节 * 4 / 3) + 4;
 const 上行合包目标字节 = 20 * 1024, 上行队列最大字节 = 16 * 1024 * 1024, 上行队列最大条目 = 4096;
@@ -225,6 +225,8 @@ export default {
 
 								// 保存到 KV
 								await env.KV.put('config.json', JSON.stringify(newConfig, null, 2));
+								// 同步刷新模块级缓存，避免后续 GET /admin/config.json 返回旧值
+								config_JSON = newConfig;
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
@@ -436,6 +438,9 @@ export default {
 								} else if (反代IP池.length > 0) {
 									const 匹配到的反代IP = 反代IP池.find(p => p.includes(节点地址));
 									if (匹配到的反代IP) 完整节点路径 = (`${config_JSON.PATH}/proxyip=${匹配到的反代IP}`).replace(/\/\//g, '/') + (config_JSON.启用0RTT ? '?ed=2560' : '');
+								}
+								if (config_JSON.反代?.PROXYIP_CUSTOM_ENABLED && config_JSON.反代?.PROXYIP_CUSTOM) {
+									完整节点路径 = 生成个性化完整节点路径(完整节点路径, 节点备注, config_JSON.反代, config_JSON.启用0RTT);
 								}
 								if (isLoonOrSurge) 完整节点路径 = 完整节点路径.replace(/,/g, '%2C');
 
@@ -5635,6 +5640,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 		},
 		反代: {
 			[_p]: "auto",
+			PROXYIP_CUSTOM: '',
+			PROXYIP_CUSTOM_ENABLED: false,
 			SOCKS5: {
 				启用: null,
 				全局: false,
@@ -5700,6 +5707,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	}
 
 	if (!config_JSON.订阅转换配置.SUBLIST) config_JSON.订阅转换配置.SUBLIST = false;
+	if (config_JSON.反代.PROXYIP_CUSTOM === undefined || config_JSON.反代.PROXYIP_CUSTOM === null) config_JSON.反代.PROXYIP_CUSTOM = '';
+	if (typeof config_JSON.反代.PROXYIP_CUSTOM_ENABLED !== 'boolean') config_JSON.反代.PROXYIP_CUSTOM_ENABLED = false;
 	if (!config_JSON.订阅转换配置.UDP) config_JSON.订阅转换配置.UDP = false;
 	if (!config_JSON.订阅转换配置.XUDP) config_JSON.订阅转换配置.XUDP = false;
 	if (!config_JSON.订阅转换配置.TLS13) config_JSON.订阅转换配置.TLS13 = false;
@@ -6420,6 +6429,53 @@ function sha224(s) {
 		for (let j = 24; j >= 0; j -= 8)hex += ((h[i] >>> j) & 0xFF).toString(16).padStart(2, '0');
 	}
 	return hex;
+}
+
+function 生成个性化完整节点路径(基础完整节点路径, 节点备注, 反代配置, 启用0RTT, 特征码占位符 = '{{IP:PORT}}') {
+	if (!反代配置?.PROXYIP_CUSTOM_ENABLED || !反代配置?.PROXYIP_CUSTOM) return 基础完整节点路径;
+	const 节点备注原文 = String(节点备注 || '');
+	if (!节点备注原文) return 基础完整节点路径;
+	const 自定义列表 = String(反代配置.PROXYIP_CUSTOM || '')
+		.split(/[\r\n,]+/)
+		.map(s => s.trim())
+		.filter(Boolean);
+	if (自定义列表.length === 0) return 基础完整节点路径;
+	let 匹配到的ProxyIP = null;
+	for (const 条目 of 自定义列表) {
+		const 井号位置 = 条目.indexOf('#');
+		if (井号位置 < 0) continue;
+		const 标签 = 条目.slice(井号位置 + 1).trim(); // 去掉 # 前缀
+		if (!标签) continue;
+		if (节点备注原文.includes(标签)) { 匹配到的ProxyIP = 条目.slice(0, 井号位置).trim(); break; }
+	}
+	if (!匹配到的ProxyIP) return 基础完整节点路径;
+	const socks协议类型 = 反代配置?.SOCKS5?.启用 ? String(反代配置.SOCKS5.启用).toUpperCase() : '';
+	const 模板键 = ['SOCKS5', 'HTTP', 'HTTPS', 'TURN', 'SSTP'].includes(socks协议类型) ? socks协议类型 : '';
+	let 个性化反代参数 = '';
+	if (模板键) {
+		const 代理配置 = 反代配置?.路径模板?.[模板键];
+		if (代理配置) 个性化反代参数 = (反代配置.SOCKS5?.全局 ? 代理配置.全局 : 代理配置.标准).replace(特征码占位符, 匹配到的ProxyIP);
+		else 个性化反代参数 = `proxyip=${匹配到的ProxyIP}`;
+	} else if (反代配置?.路径模板?.PROXYIP) {
+		个性化反代参数 = 反代配置.路径模板.PROXYIP.replace(特征码占位符, 匹配到的ProxyIP);
+	} else {
+		个性化反代参数 = `proxyip=${匹配到的ProxyIP}`;
+	}
+	if (!个性化反代参数) return 基础完整节点路径;
+	let 反代查询参数 = '';
+	if (个性化反代参数.includes('?')) {
+		const [反代路径部分, 反代查询部分] = 个性化反代参数.split('?');
+		个性化反代参数 = 反代路径部分;
+		反代查询参数 = 反代查询部分;
+	}
+	// 拆分基础路径为路径部分 + 查询部分（保留查询，避免重复添加 ed=2560）
+	const [基础路径部分, ...基础查询数组] = 基础完整节点路径.split('?');
+	const 基础查询部分 = 基础查询数组.length ? '?' + 基础查询数组.join('?') : '';
+	// 在基础路径里移除已存在的反代段（proxyip=xxx / socks5=xxx / http=xxx 等），剩余部分作为前缀
+	const 路径前缀 = 基础路径部分.replace(/\/(?:proxyip|socks5?|https?|sstp|turn)[=.]?[^/?]*/i, '');
+	// 路径前缀可能为 / 或 /something/ 或空；统一处理为以单个 "/" 开头
+	const 标准化前缀 = 路径前缀 === '' ? '/' : (路径前缀.endsWith('/') ? 路径前缀 : 路径前缀 + '/');
+	return 标准化前缀 + 个性化反代参数 + (反代查询参数 ? (基础查询部分 ? 基础查询部分 + '&' + 反代查询参数 : '?' + 反代查询参数) : 基础查询部分);
 }
 
 async function 解析地址端口(proxyIP, 目标域名 = 'dash.cloudflare.com', UUID = '00000000-0000-4000-8000-000000000000') {
