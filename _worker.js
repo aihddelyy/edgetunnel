@@ -6447,6 +6447,8 @@ function 生成个性化完整节点路径(基础完整节点路径, 节点备�
 	if (!反代配置?.PROXYIP_CUSTOM_ENABLED || !反代配置?.PROXYIP_CUSTOM) return 基础完整节点路径;
 	const 节点备注原文 = String(节点备注 || '');
 	if (!节点备注原文) return 基础完整节点路径;
+	// 条目间分隔符：换行或英文逗号 ,（保持与之前行为一致）
+	// 关键词间分隔符：仅竖线 |（避免与条目分隔符冲突）
 	const 自定义列表 = String(反代配置.PROXYIP_CUSTOM || '')
 		.split(/[\r\n,]+/)
 		.map(s => s.trim())
@@ -6456,9 +6458,16 @@ function 生成个性化完整节点路径(基础完整节点路径, 节点备�
 	for (const 条目 of 自定义列表) {
 		const 井号位置 = 条目.indexOf('#');
 		if (井号位置 < 0) continue;
-		const 标签 = 条目.slice(井号位置 + 1).trim(); // 去掉 # 前缀
-		if (!标签) continue;
-		if (节点备注原文.includes(标签)) { 匹配到的ProxyIP = 条目.slice(0, 井号位置).trim(); break; }
+		const 标签原文 = 条目.slice(井号位置 + 1); // 去掉 # 前缀
+		if (!标签原文) continue;
+		// 关键词分隔符：仅竖线 |（任一匹配即命中）
+		const 关键词列表 = 标签原文
+			.split(/\|/)
+			.map(s => s.trim())
+			.filter(Boolean);
+		if (关键词列表.length === 0) continue;
+		const 命中 = 关键词列表.some(关键词 => 节点备注原文.includes(关键词));
+		if (命中) { 匹配到的ProxyIP = 条目.slice(0, 井号位置).trim(); break; }
 	}
 	if (!匹配到的ProxyIP) return 基础完整节点路径;
 	const socks协议类型 = 反代配置?.SOCKS5?.启用 ? String(反代配置.SOCKS5.启用).toUpperCase() : '';
