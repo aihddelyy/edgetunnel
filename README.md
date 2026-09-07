@@ -26,6 +26,17 @@
 - ⚡ **性能加速**：支持自定义 ProxyIP、SOCKS5/HTTP 链式代理及优选 API，优化网络延迟。
 - 🌐 **多台适配**：完美适配 Windows, Android, iOS, MacOS 及各种软路由固件。
 
+### 🆕 本仓库新增功能（相对上游 `cmliu/edgetunnel`）
+
+| 功能 | 说明 |
+|------|------|
+| 🎯 **个性化 PROXYIP** | 按节点备注中的 `#标签` 为不同节点分配不同 PROXYIP；支持单关键词（如 `#HK`）与多关键词（如 `#HK\|香港\|HK01`，任一命中即匹配）。条目间用换行或逗号分隔。 |
+| 🔐 **TLS 客户端证书请求兼容** | TLS 1.2 / 1.3 握手不再因服务端请求客户端证书而抛错，自动发送空证书响应，握手成功率显著提升。 |
+| 🌐 **ALPN 协议协商（联动 EDT-Pages）** | 后端写入 `ALPN` 配置字段并在订阅 URL 中输出 `&alpn=...`；管理面板提供下拉框与高危选项确认弹窗。 |
+| ⚠️ **ECH × 指纹冲突弹窗（联动 EDT-Pages）** | 当开启 ECH 但选择的浏览器指纹不支持 ECH 时（如 `safari`/`random`），管理面板弹出三选一冲突解决弹窗（切换 chrome / 切换 firefox / 关闭 ECH）。 |
+| 📜 **展开规则全文（联动 EDT-Pages）** | 订阅转换新增 `EXPAND` 选项，可输出完整的分流规则列表。 |
+| 🔁 **模块级配置缓存同步** | 保存配置后立即刷新模块级 `config_JSON`，避免后续 `GET /admin/config.json` 返回旧值。 |
+
 ---
 
 ## 💡 快速部署
@@ -164,6 +175,52 @@
    ```url
    /trojan=1.1.1.1:1234
    ```
+
+---
+
+## 🎯 个性化 PROXYIP 使用指南
+
+根据节点备注中包含的 `#标签`，为不同的节点分配不同的 PROXYIP，绕过单一 PROXYIP 的负载和地域限制。
+
+> **要求**：需同时部署配套的管理面板前端 [`aihddelyy/EDT-Pages`](https://github.com/aihddelyy/EDT-Pages)，在管理后台「反代」模块下勾选 **启用个性化 PROXYIP** 后即可填写。
+
+### 📝 填写语法
+
+| 位置 | 分隔符 | 示例 |
+|------|--------|------|
+| **条目之间** | 换行 `\n` **或** 英文逗号 `,` | `proxyip.hk#HK\nproxyip.jp#JP` |
+| **同一节点多个关键词** | 仅竖线 `\|`（任一命中即匹配） | `proxyip.hk#HK\|香港\|HK01` |
+
+### 🔍 匹配规则
+
+按列表顺序**遍历**每条 `PROXYIP#标签`，检查节点备注中**是否包含**对应标签；命中即用该 PROXYIP 替换节点路径中的反代段，未命中则继续向下匹配。
+
+### ✏️ 填写示例
+
+**单关键词格式**（一行一条）：
+```text
+proxyip1.cmliussss.net#HK
+proxyip2.cmliussss.net#JP
+proxyip3.cmliussss.net:8443#US
+[2606:4700::]:2053#IPv6
+```
+
+**多关键词格式**（同一个 PROXYIP 匹配多个节点名，`|` 分隔，任一命中即匹配）：
+```text
+proxyip1.cmliussss.net#HK|香港|HK01
+proxyip2.cmliussss.net#JP|东京
+proxyip3.cmliussss.net:443#US|洛杉矶
+```
+
+**多条目格式**（同一行用逗号拼接）：
+```text
+proxyip1.cmliussss.net#HK,proxyip2.cmliussss.net#JP,proxyip3.cmliussss.net#US
+```
+
+> [!IMPORTANT]
+> **优先级**：个性化 PROXYIP 与全局 PROXYIP 共存时，节点将优先使用个性化 PROXYIP。未匹配到的节点使用全局 PROXYIP。
+>
+> **未启用开关 = 不生效**：必须勾选 **启用个性化 PROXYIP**，否则即使填写了内容也不会修改任何节点。
 
 ---
 
