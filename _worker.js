@@ -438,8 +438,21 @@ export default {
 										console.warn(`[订阅内容] 链式代理解析失败，已忽略该指令: ${链式代理匹配[0]} (${error && error.message ? error.message : error})`);
 									}
 								} else if (反代IP池.length > 0) {
-									const 匹配到的反代IP = 反代IP池.find(p => p.includes(节点地址));
-									if (匹配到的反代IP) {
+									// 反代IP池中每项格式为 "IP:端口@@API备注名"，需同时校验地址和API备注来源，避免与同地址的其他节点冲突
+									// 节点备注形如 "原备注 [API备注名]"，从末尾方括号中提取 API备注名
+									const 节点API备注 = (节点备注.match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
+									const 匹配项 = 反代IP池.find(p => {
+										const sepIdx = p.lastIndexOf('@@');
+										const pIP = sepIdx >= 0 ? p.slice(0, sepIdx) : p;
+										const pRemark = sepIdx >= 0 ? p.slice(sepIdx + 2) : '';
+										if (!pIP.includes(节点地址)) return false;
+										// 如果反代IP池条目有API备注名，则节点必须对应同一API；否则仅匹配无API备注的反代IP池条目
+										if (pRemark) return 节点API备注 && 节点API备注 === pRemark;
+										return !节点API备注;
+									});
+									if (匹配项) {
+										const sepIdx = 匹配项.lastIndexOf('@@');
+										const 匹配到的反代IP = sepIdx >= 0 ? 匹配项.slice(0, sepIdx) : 匹配项;
 										完整节点路径 = (`${config_JSON.PATH}/proxyip=${匹配到的反代IP}`).replace(/\/\//g, '/') + (config_JSON.启用0RTT ? '?ed=2560' : '');
 										优选IP作为反代IP已命中 = true;
 									}
@@ -6000,12 +6013,13 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 							? `${ip} [${API备注名}]`
 							: `${ip}#[${API备注名}]`;
 						results.add(处理后IP);
-						if (优选IP作为反代IP) 反代IP池.add(ip.split('#')[0]);
+						// 反代IP池携带来源API备注，避免与同地址的其他节点冲突
+						if (优选IP作为反代IP) 反代IP池.add(`${ip.split('#')[0]}@@${API备注名}`);
 					}
 				} else {
 					for (const ip of 优选IP) {
 						results.add(ip);
-						if (优选IP作为反代IP) 反代IP池.add(ip.split('#')[0]);
+						if (优选IP作为反代IP) 反代IP池.add(`${ip.split('#')[0]}@@`);
 					}
 				}
 				// 处理第二个数组 - 其他节点LINK
@@ -6133,7 +6147,7 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 					} else {
 						results.add(ipItem);
 					}
-					if (优选IP作为反代IP) 反代IP池.add(ipItem.split('#')[0]);
+					if (优选IP作为反代IP) 反代IP池.add(`${ipItem.split('#')[0]}@@${API备注名 || ''}`);
 				});
 			} else {
 				const headers = lines[0].split(',').map(h => h.trim());
@@ -6155,7 +6169,7 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 						} else {
 							results.add(ipItem);
 						}
-						if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${cols[portIdx]}`);
+						if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${cols[portIdx]}@@${API备注名 || ''}`);
 					});
 				} else if (headers.some(h => h.includes('IP')) && headers.some(h => h.includes('延迟')) && headers.some(h => h.includes('下载速度'))) {
 					const ipIdx = headers.findIndex(h => h.includes('IP'));
@@ -6173,7 +6187,7 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 						} else {
 							results.add(ipItem);
 						}
-						if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${port}`);
+						if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${port}@@${API备注名 || ''}`);
 					});
 				}
 			}
